@@ -1,0 +1,18 @@
+# Jupyter notebooks and temp files
+train_botguard.ipynb
+scratch/
+twibot20.json
+pytest.ini
+
+# Python environment & cache
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local weights and processed datasets (keep folder structures via .gitkeep)
+data/processed/*.csv
+data/weights/*.pt
+!data/processed/.gitkeep
+!data/weights/.gitkeep
