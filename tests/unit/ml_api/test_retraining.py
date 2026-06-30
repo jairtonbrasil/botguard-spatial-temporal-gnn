@@ -19,6 +19,16 @@ class TestRetrainingPipeline(unittest.TestCase):
         self.assertGreaterEqual(samples[0]["reputation"], 0.1)
         self.assertLessEqual(samples[0]["reputation"], 0.5)
 
+    def test_caleb_structural_generation(self):
+        augmenter = CALEBAugmenter()
+        samples = augmenter.generate_evasive_samples_for_training(num_samples=5)
+        
+        self.assertEqual(len(samples), 5)
+        self.assertEqual(samples[0]["label"], 1)
+        self.assertEqual(len(samples[0]["temporal"]), 10)
+        self.assertEqual(len(samples[0]["nodes"]), 2)
+        self.assertEqual(len(samples[0]["edges"]), 2)
+
     @patch('ml_api.application.train.HybridBotDetector.load_state_dict')
     @patch('ml_api.application.train.torch.load')
     @patch('ml_api.application.train.urllib.request.urlopen')

@@ -50,18 +50,25 @@ class ModelRetrainer:
         logger.info(f"Loaded {len(human_samples)} expert human annotations.")
         
         augmenter = CALEBAugmenter()
-        synthetic_bots = augmenter.generate_evasive_bots(num_samples=20)
-        logger.info(f"Generated {len(synthetic_bots)} evasive bot profiles via CALEB CGAN.")
-
-        # If we have live human labels with full graphs, fine-tune the hybrid model
-        if human_samples:
+        # Generate structural synthetic samples compatible with HybridBotDetector
+        base_template = human_samples[0] if human_samples else None
+        synthetic_samples = augmenter.generate_evasive_samples_for_training(
+            num_samples=20,
+            base_template=base_template
+        )
+        logger.info(f"Generated {len(synthetic_samples)} structural evasive bot samples via CALEB CGAN.")
+        
+        # Combine human annotations and synthetic CGAN samples
+        training_samples = human_samples + synthetic_samples
+        
+        if training_samples:
             self.model.train()
             optimizer = optim.Adam(self.model.parameters(), lr=0.005)
             criterion = nn.BCELoss()
             
             for epoch in range(5):
                 total_loss = 0.0
-                for sample in human_samples:
+                for sample in training_samples:
                     optimizer.zero_grad()
                     
                     temp_seq = torch.tensor([sample["temporal"]], dtype=torch.float32).to(self.device)
@@ -75,12 +82,12 @@ class ModelRetrainer:
                     optimizer.step()
                     total_loss += loss.item()
                 
-                logger.info(f"Epoch {epoch+1}/5 - Loss: {total_loss / max(len(human_samples), 1):.4f}")
+                logger.info(f"Epoch {epoch+1}/5 - Loss: {total_loss / max(len(training_samples), 1):.4f}")
         
         # Save updated weights
         self.weights_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(self.model.state_dict(), self.weights_path)
-        logger.info(f"✅ Retrained weights saved successfully to {self.weights_path}")
+        logger.info(f"Retrained weights saved successfully to {self.weights_path}")
         
         # Trigger Zero-Downtime Hot-Swap
         try:
@@ -91,7 +98,7 @@ class ModelRetrainer:
             )
             with urllib.request.urlopen(req, timeout=5) as response:
                 res_data = json.loads(response.read().decode())
-                logger.info(f"🔥 Hot-Swap Status: {res_data.get('message')}")
+                logger.info(f"Hot-Swap Status: {res_data.get('message')}")
         except Exception as e:
             logger.warning(f"ML API reload trigger skipped: {e} (Make sure the API server is running on port 8000)")
 
