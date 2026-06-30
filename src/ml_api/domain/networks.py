@@ -67,8 +67,10 @@ class HybridBotDetector(nn.Module):
         # Extract Spatial Features (for all nodes in the sub-graph)
         spatial_emb_all = self.spatial_encoder(node_features, edge_index)
         
-        # Select only the spatial embedding for the specific user we are evaluating
-        spatial_emb_target = spatial_emb_all[target_node_idx].unsqueeze(0) 
+        # Select only the spatial embedding for the specific user(s) we are evaluating
+        spatial_emb_target = spatial_emb_all[target_node_idx]
+        if spatial_emb_target.dim() == 1:
+            spatial_emb_target = spatial_emb_target.unsqueeze(0) 
         
         # Fuse and Classify
         fused_features = torch.cat((temporal_emb, spatial_emb_target), dim=1)

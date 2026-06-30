@@ -116,45 +116,82 @@ class InferenceManager:
             }
 
     def explain(self, temporal_features: list, node_features: list, edge_index: list, target_idx: int) -> dict:
-        base_score = self.predict(temporal_features, node_features, edge_index, target_idx)
-        
-        f_followers = [row.copy() for row in node_features]
-        f_followers[target_idx][0] = 0.0
-        score_followers = self.predict(temporal_features, f_followers, edge_index, target_idx)
-        
-        f_following = [row.copy() for row in node_features]
-        f_following[target_idx][1] = 0.0
-        score_following = self.predict(temporal_features, f_following, edge_index, target_idx)
-        
-        f_ratio = [row.copy() for row in node_features]
-        f_ratio[target_idx][2] = 0.0
-        score_ratio = self.predict(temporal_features, f_ratio, edge_index, target_idx)
-        
-        f_len = [row.copy() for row in temporal_features]
-        for row in f_len:
-            row[0] = 0.0
-        score_len = self.predict(f_len, node_features, edge_index, target_idx)
-        
-        f_complex = [row.copy() for row in temporal_features]
-        for row in f_complex:
-            row[1] = 0.0
-        score_complex = self.predict(f_complex, node_features, edge_index, target_idx)
-        
-        d_followers = abs(base_score - score_followers)
-        d_following = abs(base_score - score_following)
-        d_ratio = abs(base_score - score_ratio)
-        d_len = abs(base_score - score_len)
-        d_complex = abs(base_score - score_complex)
-        
-        total = d_followers + d_following + d_ratio + d_len + d_complex
-        if total > 0.0:
-            return {
-                "followers_count": round(d_followers / total, 4),
-                "following_count": round(d_following / total, 4),
-                "follower_ratio": round(d_ratio / total, 4),
-                "post_length": round(d_len / total, 4),
-                "post_complexity": round(d_complex / total, 4)
-            }
+        try:
+            n_nodes = len(node_features)
+            
+            # Prepare the 6 temporal sequence variants
+            temp_seq_0 = temporal_features
+            temp_seq_1 = temporal_features
+            temp_seq_2 = temporal_features
+            temp_seq_3 = temporal_features
+            temp_seq_4 = [[0.0, row[1]] for row in temporal_features]
+            temp_seq_5 = [[row[0], 0.0] for row in temporal_features]
+            
+            temp_seq_batch = torch.tensor(
+                [temp_seq_0, temp_seq_1, temp_seq_2, temp_seq_3, temp_seq_4, temp_seq_5],
+                dtype=torch.float32
+            ).to(self.device)
+            
+            # Prepare the 6 node features variants
+            nf_0 = node_features
+            
+            nf_1 = [row.copy() for row in node_features]
+            nf_1[target_idx][0] = 0.0
+            
+            nf_2 = [row.copy() for row in node_features]
+            nf_2[target_idx][1] = 0.0
+            
+            nf_3 = [row.copy() for row in node_features]
+            nf_3[target_idx][2] = 0.0
+            
+            nf_4 = node_features
+            nf_5 = node_features
+            
+            all_node_features = []
+            for nf in [nf_0, nf_1, nf_2, nf_3, nf_4, nf_5]:
+                all_node_features.extend(nf)
+            node_features_batch = torch.tensor(all_node_features, dtype=torch.float32).to(self.device)
+            
+            # Prepare the 6 edge indices variants (shifted)
+            edges_tensor = torch.tensor(edge_index, dtype=torch.long)
+            edge_index_list = []
+            for i in range(6):
+                edge_index_list.append(edges_tensor + i * n_nodes)
+            edge_index_batch = torch.cat(edge_index_list, dim=1).to(self.device)
+            
+            # Target indices for the batch
+            target_idxs_batch = torch.tensor([target_idx + i * n_nodes for i in range(6)], dtype=torch.long).to(self.device)
+            
+            # Single parallel batch inference
+            with torch.no_grad():
+                probabilities = self.model(temp_seq_batch, node_features_batch, edge_index_batch, target_idxs_batch)
+                
+            scores = probabilities.squeeze(1).tolist()
+            base_score = scores[0]
+            score_followers = scores[1]
+            score_following = scores[2]
+            score_ratio = scores[3]
+            score_len = scores[4]
+            score_complex = scores[5]
+            
+            d_followers = abs(base_score - score_followers)
+            d_following = abs(base_score - score_following)
+            d_ratio = abs(base_score - score_ratio)
+            d_len = abs(base_score - score_len)
+            d_complex = abs(base_score - score_complex)
+            
+            total = d_followers + d_following + d_ratio + d_len + d_complex
+            if total > 0.0:
+                return {
+                    "followers_count": round(d_followers / total, 4),
+                    "following_count": round(d_following / total, 4),
+                    "follower_ratio": round(d_ratio / total, 4),
+                    "post_length": round(d_len / total, 4),
+                    "post_complexity": round(d_complex / total, 4)
+                }
+        except Exception as e:
+            logger.error(f"Explainability batch inference failed: {e}")
+            
         return {
             "followers_count": 0.20,
             "following_count": 0.20,
